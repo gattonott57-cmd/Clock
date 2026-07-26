@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>とけい よみよみ ちゃれんじ</title>
+<style>
+  :root{
+    --bg1:#fff4e0;
+    --bg2:#ffe0ec;
+    --accent:#ff8fab;
+    --accent2:#5bc0be;
+    --dark:#3a3a4a;
+    --good:#4caf50;
+    --bad:#ff6b6b;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{
+    margin:0; padding:0; height:100%;
+    font-family:"Hiragino Maru Gothic ProN","Rounded Mplus 1c","Yu Gothic",sans-serif;
+    background:linear-gradient(160deg,var(--bg1),var(--bg2));
+    color:var(--dark);
+    overscroll-behavior:none;
+  }
+  #app{
+    min-height:100vh;
+    display:flex; flex-direction:column; align-items:center;
+    padding:16px 12px 40px;
+  }
+  h1{
+    font-size:22px; margin:8px 0 4px; text-align:center;
+    color:var(--dark);
+  }
+  .sub{font-size:13px; color:#888; margin-bottom:10px;}
+
+  .statbar{
+    display:flex; gap:10px; margin-bottom:10px;
+  }
+  .stat{
+    background:#fff; border-radius:14px; padding:6px 14px;
+    font-size:13px; font-weight:bold; box-shadow:0 2px 6px rgba(0,0,0,0.08);
+  }
+  .stat span{color:var(--accent);}
+
+  .card{
+    background:#fff; border-radius:24px; padding:18px 16px 22px;
+    box-shadow:0 6px 18px rgba(0,0,0,0.10);
+    width:100%; max-width:380px;
+    display:flex; flex-direction:column; align-items:center;
+  }
+
+  .modeLabel{
+    font-size:14px; font-weight:bold; color:#fff;
+    background:var(--accent2); padding:4px 14px; border-radius:20px;
+    margin-bottom:10px;
+  }
+  .modeLabel.mode-set{ background:var(--accent); }
+
+  .prompt{
+    font-size:16px; font-weight:bold; margin-bottom:8px; text-align:center; min-height:22px;
+  }
+  .targetTime{
+    font-size:34px; font-weight:bold; color:var(--accent2); margin-bottom:6px;
+    letter-spacing:1px;
+  }
+
+  svg#clock{ touch-action:none; user-select:none; }
+  .hand{ cursor:grab; }
+  .hand:active{ cursor:grabbing; }
+
+  .answerArea{
+    margin-top:14px; width:100%;
+    display:flex; flex-direction:column; align-items:center; gap:10px;
+  }
+  .selectRow{ display:flex; align-items:center; gap:6px; font-size:20px; font-weight:bold;}
+  select{
+    font-size:20px; font-weight:bold; padding:8px 6px; border-radius:12px;
+    border:2px solid #eee; background:#fafafa; color:var(--dark);
+  }
+  .btn{
+    border:none; border-radius:16px; padding:12px 28px; font-size:17px; font-weight:bold;
+    background:var(--accent); color:#fff; box-shadow:0 4px 10px rgba(255,143,171,0.4);
+    cursor:pointer; margin-top:4px;
+  }
+  .btn:active{ transform:scale(0.96); }
+  .btn.secondary{ background:var(--accent2); box-shadow:0 4px 10px rgba(91,192,190,0.4); }
+
+  .feedback{
+    margin-top:10px; font-size:18px; font-weight:bold; min-height:26px;
+    display:flex; align-items:center; gap:6px;
+  }
+  .feedback.ok{ color:var(--good); }
+  .feedback.ng{ color:var(--bad); }
+
+  .resultCard{
+    text-align:center;
+  }
+  .resultScore{ font-size:40px; font-weight:bold; color:var(--accent); margin:10px 0; }
+  .mascot{ font-size:48px; }
+
+  .confetti{
+    position:fixed; top:-20px; font-size:22px; pointer-events:none; z-index:50;
+    animation: fall linear forwards;
+  }
+  @keyframes fall{
+    to{ transform: translateY(110vh) rotate(360deg); opacity:0.3; }
+  }
+
+  .progressWrap{
+    width:100%; max-width:380px; height:8px; background:#eee; border-radius:6px;
+    margin-bottom:12px; overflow:hidden;
+  }
+  .progressBar{
+    height:100%; background:var(--accent2); width:0%; transition:width .3s;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <h1>🕐 とけい よみよみ ちゃれんじ 🕐</h1>
+  <div class="sub">とけいの よみかたを れんしゅうしよう！</div>
+
+  <div class="statbar">
+    <div class="stat">もんだい <span id="qnum">1</span>/10</div>
+    <div class="stat">せいかい <span id="correctnum">0</span></div>
+    <div class="stat">れんぞく <span id="streaknum">0</span> 🔥</div>
+  </div>
+
+  <div class="progressWrap"><div class="progressBar" id="progressBar"></div></div>
+
+  <div class="card" id="card"></div>
+</div>
+
+<script>
+const TOTAL_Q = 10;
+let qIndex = 0;
+let correctCount = 0;
+let streak = 0;
+let bestStreak = 0;
+let current = null; // {mode:'read'|'set', hour, minute}
+
+// dragging state for set-mode
+let dragTarget = null; // 'hour' | 'minute'
+let userHour = 12, userMinute = 0;
+
+const cardEl = document.getElementById('card');
+const qnumEl = document.getElementById('qnum');
+const correctEl = document.getElementById('correctnum');
+const streakEl = document.getElementById('streaknum');
+const progressBar = document.getElementById('progressBar');
+
+function randInt(min, max){ return Math.floor(Math.random()*(max-min+1))+min; }
+function randMinute5(){ return randInt(0,11)*5; }
+
+function pad2(n){ return n.toString().padStart(2,'0'); }
+
+function newQuestion(){
+  if(qIndex >= TOTAL_Q){ showResult(); return; }
+  qIndex++;
+  qnumEl.textContent = qIndex;
+  progressBar.style.width = ((qIndex-1)/TOTAL_Q*100) + '%';
+
+  const hour = randInt(1,12);
+  const minute = randMinute5();
+  const mode = Math.random() < 0.5 ? 'read' : 'set';
+  current = { mode, hour, minute };
+
+  if(mode === 'read'){
+    renderReadMode();
+  } else {
+    userHour = randInt(1,12);
+    userMinute = randMinute5();
+    // make sure start position differs from answer sometimes
+    renderSetMode();
+  }
+}
+
+function buildClockMarkup(){
+  let numbersSvg = '';
+  for(let n=1;n<=12;n++){
+    const ang = (n/12)*2*Math.PI - Math.PI/2;
+    const r = 108;
+    const x = 140 + r*Math.cos(ang);
+    const y = 140 + r*Math.sin(ang);
+    numbersSvg += `<text x="${x.toFixed(1)}" y="${(y+6).toFixed(1)}" font-size="18" font-weight="bold" text-anchor="middle" fill="#3a3a4a">${n}</text>`;
+  }
+  let ticksSvg = '';
+  for(let i=0;i<60;i++){
+    const ang = (i/60)*2*Math.PI - Math.PI/2;
+    const isHour = i%5===0;
+    const r1 = isHour ? 92 : 98;
+    const r2 = 104;
+    const x1 = 140 + r1*Math.cos(ang);
+    const y1 = 140 + r1*Math.sin(ang);
+    const x2 = 140 + r2*Math.cos(ang);
+    const y2 = 140 + r2*Math.sin(ang);
+    ticksSvg += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="#3a3a4a" stroke-width="${isHour?3:1.5}" stroke-linecap="round"/>`;
+  }
+  return { numbersSvg, ticksSvg };
+}
+
+function angleForHour(hour, minute){ return ((hour%12) + minute/60)/12*360; }
+function angleForMinute(minute){ return (minute/60)*360; }
+
+function renderClock(hour, minute, draggable){
+  const { numbersSvg, ticksSvg } = buildClockMarkup();
+  const hAngle = angleForHour(hour, minute);
+  const mAngle = angleForMinute(minute);
+  return `
+  <svg id="clock" width="280" height="280" viewBox="0 0 280 280">
+    <circle cx="140" cy="140" r="130" fill="#fffdf8" stroke="#3a3a4a" stroke-width="4"/>
+    ${ticksSvg}
+    ${numbersSvg}
+    <line id="hourHand" class="hand" x1="140" y1="140" x2="140" y2="80"
+      stroke="#3a3a4a" stroke-width="7" stroke-linecap="round"
+      transform="rotate(${hAngle} 140 140)"
+      style="pointer-events:${draggable?'stroke':'none'}"/>
+    <line id="minuteHand" class="hand" x1="140" y1="140" x2="140" y2="46"
+      stroke="#ff8fab" stroke-width="5" stroke-linecap="round"
+      transform="rotate(${mAngle} 140 140)"
+      style="pointer-events:${draggable?'stroke':'none'}"/>
+    <circle cx="140" cy="140" r="8" fill="#3a3a4a"/>
+  </svg>`;
+}
+
+function renderReadMode(){
+  cardEl.innerHTML = `
+    <div class="modeLabel">とけいを よもう</div>
+    <div class="prompt">なんじなんぷん かな？</div>
+    ${renderClock(current.hour, current.minute, false)}
+    <div class="answerArea">
+      <div class="selectRow">
+        <select id="selHour"></select> <span>じ</span>
+        <select id="selMinute"></select> <span>ふん</span>
+      </div>
+      <button class="btn" id="checkBtn">こたえる</button>
+      <div class="feedback" id="feedback"></div>
+    </div>
+  `;
+  const selHour = document.getElementById('selHour');
+  const selMinute = document.getElementById('selMinute');
+  for(let h=1;h<=12;h++){
+    selHour.innerHTML += `<option value="${h}">${h}</option>`;
+  }
+  for(let m=0;m<60;m+=5){
+    selMinute.innerHTML += `<option value="${m}">${pad2(m)}</option>`;
+  }
+  selHour.value = 12;
+  selMinute.value = 0;
+
+  document.getElementById('checkBtn').onclick = () => {
+    const h = parseInt(selHour.value,10);
+    const m = parseInt(selMinute.value,10);
+    const ok = (h === current.hour && m === current.minute);
+    handleResult(ok, `${current.hour}じ${pad2(current.minute)}ふん`);
+  };
+}
+
+function renderSetMode(){
+  cardEl.innerHTML = `
+    <div class="modeLabel mode-set">はりを あわせよう</div>
+    <div class="prompt">この じかんに あわせてね</div>
+    <div class="targetTime">${current.hour}:${pad2(current.minute)}</div>
+    ${renderClock(userHour, userMinute, true)}
+    <div class="answerArea">
+      <button class="btn" id="checkBtn">こたえる</button>
+      <div class="feedback" id="feedback"></div>
+    </div>
+  `;
+  setupDrag();
+  document.getElementById('checkBtn').onclick = () => {
+    const ok = (userHour === current.hour && userMinute === current.minute);
+    handleResult(ok, `${current.hour}じ${pad2(current.minute)}ふん`);
+  };
+}
+
+function setupDrag(){
+  const svg = document.getElementById('clock');
+  const hourHand = document.getElementById('hourHand');
+  const minuteHand = document.getElementById('minuteHand');
+
+  function getAngleFromEvent(evt){
+    const rect = svg.getBoundingClientRect();
+    const cx = rect.left + rect.width/2;
+    const cy = rect.top + rect.height/2;
+    const clientX = evt.touches ? evt.touches[0].clientX : evt.clientX;
+    const clientY = evt.touches ? evt.touches[0].clientY : evt.clientY;
+    const dx = clientX - cx;
+    const dy = clientY - cy;
+    let deg = Math.atan2(dx, -dy) * 180/Math.PI;
+    if(deg < 0) deg += 360;
+    return deg;
+  }
+
+  function onDown(target){
+    return (evt) => {
+      evt.preventDefault();
+      dragTarget = target;
+    };
+  }
+  hourHand.addEventListener('pointerdown', onDown('hour'));
+  minuteHand.addEventListener('pointerdown', onDown('minute'));
+  hourHand.addEventListener('touchstart', onDown('hour'), {passive:false});
+  minuteHand.addEventListener('touchstart', onDown('minute'), {passive:false});
+
+  function onMove(evt){
+    if(!dragTarget) return;
+    evt.preventDefault();
+    const deg = getAngleFromEvent(evt);
+    if(dragTarget === 'minute'){
+      let idx = Math.round(deg/30) % 12;
+      userMinute = idx*5;
+    } else {
+      let idx = Math.round(deg/30) % 12;
+      userHour = idx === 0 ? 12 : idx;
+    }
+    updateHandPositions();
+  }
+  function onUp(){ dragTarget = null; }
+
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+  window.addEventListener('touchmove', onMove, {passive:false});
+  window.addEventListener('touchend', onUp);
+}
+
+function updateHandPositions(){
+  const hourHand = document.getElementById('hourHand');
+  const minuteHand = document.getElementById('minuteHand');
+  if(!hourHand || !minuteHand) return;
+  const hAngle = angleForHour(userHour, userMinute);
+  const mAngle = angleForMinute(userMinute);
+  hourHand.setAttribute('transform', `rotate(${hAngle} 140 140)`);
+  minuteHand.setAttribute('transform', `rotate(${mAngle} 140 140)`);
+}
+
+function handleResult(ok, answerText){
+  const fb = document.getElementById('feedback');
+  const checkBtn = document.getElementById('checkBtn');
+  checkBtn.disabled = true;
+  if(ok){
+    correctCount++;
+    streak++;
+    bestStreak = Math.max(bestStreak, streak);
+    fb.textContent = '⭕ せいかい！ すごいね！';
+    fb.className = 'feedback ok';
+    burstConfetti();
+  } else {
+    streak = 0;
+    fb.textContent = `❌ ざんねん… こたえは ${answerText}`;
+    fb.className = 'feedback ng';
+  }
+  correctEl.textContent = correctCount;
+  streakEl.textContent = streak;
+
+  setTimeout(() => { newQuestion(); }, 1400);
+}
+
+function burstConfetti(){
+  const emojis = ['🎉','✨','⭐','🌟','🎊'];
+  for(let i=0;i<12;i++){
+    const el = document.createElement('div');
+    el.className = 'confetti';
+    el.textContent = emojis[randInt(0,emojis.length-1)];
+    el.style.left = randInt(5,95) + 'vw';
+    el.style.animationDuration = (1.2 + Math.random()*0.8) + 's';
+    document.body.appendChild(el);
+    setTimeout(()=>el.remove(), 2200);
+  }
+}
+
+function showResult(){
+  progressBar.style.width = '100%';
+  let mascot = '🐣';
+  let msg = 'つぎは もっと がんばろう！';
+  const rate = correctCount/TOTAL_Q;
+  if(rate === 1){ mascot='🏆'; msg='パーフェクト！ すごすぎる！'; }
+  else if(rate >= 0.8){ mascot='😆'; msg='とっても じょうず！'; }
+  else if(rate >= 0.5){ mascot='😊'; msg='よく できました！'; }
+
+  cardEl.innerHTML = `
+    <div class="resultCard">
+      <div class="mascot">${mascot}</div>
+      <div class="prompt">けっか はっぴょう！</div>
+      <div class="resultScore">${correctCount} / ${TOTAL_Q}</div>
+      <div class="sub">さいこう れんぞく: ${bestStreak}かい</div>
+      <div style="margin-top:6px; font-weight:bold;">${msg}</div>
+      <button class="btn" id="retryBtn" style="margin-top:16px;">もういちど ちょうせん！</button>
+    </div>
+  `;
+  document.getElementById('retryBtn').onclick = () => {
+    qIndex = 0; correctCount = 0; streak = 0; bestStreak = 0;
+    correctEl.textContent = 0; streakEl.textContent = 0;
+    newQuestion();
+  };
+  if(rate >= 0.8) burstConfetti();
+}
+
+newQuestion();
+</script>
+</body>
+</html>
