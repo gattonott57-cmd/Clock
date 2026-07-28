@@ -65,8 +65,17 @@
   }
 
   svg#clock{ touch-action:none; user-select:none; }
-  .hand{ cursor:grab; }
-  .hand:active{ cursor:grabbing; }
+  .handle{ cursor:grab; touch-action:none; }
+  .handle:active{ cursor:grabbing; }
+
+  .handLegend{
+    margin-top:10px; background:#fff8f0; border-radius:14px; padding:10px 14px;
+    font-size:12.5px; line-height:1.8; width:100%; box-sizing:border-box;
+  }
+  .legendItem{ display:flex; align-items:center; gap:6px; }
+  .dot{ width:14px; height:14px; border-radius:50%; display:inline-block; border:2px solid #fff; box-shadow:0 0 0 1px #ddd; flex-shrink:0; }
+  .dot-hour{ background:#3a3a4a; }
+  .dot-minute{ background:#ff8fab; }
 
   .answerArea{
     margin-top:14px; width:100%;
@@ -211,16 +220,25 @@ function renderClock(hour, minute, draggable){
     <circle cx="140" cy="140" r="130" fill="#fffdf8" stroke="#3a3a4a" stroke-width="4"/>
     ${ticksSvg}
     ${numbersSvg}
-    <line id="hourHand" class="hand" x1="140" y1="140" x2="140" y2="80"
-      stroke="#3a3a4a" stroke-width="7" stroke-linecap="round"
-      transform="rotate(${hAngle} 140 140)"
-      style="pointer-events:${draggable?'stroke':'none'}"/>
-    <line id="minuteHand" class="hand" x1="140" y1="140" x2="140" y2="46"
-      stroke="#ff8fab" stroke-width="5" stroke-linecap="round"
-      transform="rotate(${mAngle} 140 140)"
-      style="pointer-events:${draggable?'stroke':'none'}"/>
+    <g id="hourGroup" transform="rotate(${hAngle} 140 140)">
+      <line class="hand" x1="140" y1="140" x2="140" y2="80"
+        stroke="#3a3a4a" stroke-width="7" stroke-linecap="round" style="pointer-events:none"/>
+      ${draggable ? `<circle id="hourHandle" class="handle" cx="140" cy="80" r="20" fill="#3a3a4a" stroke="#fff" stroke-width="3" style="touch-action:none;"/>
+      <text x="140" y="86" font-size="15" font-weight="bold" fill="#fff" text-anchor="middle" style="pointer-events:none">じ</text>` : ''}
+    </g>
+    <g id="minuteGroup" transform="rotate(${mAngle} 140 140)">
+      <line class="hand" x1="140" y1="140" x2="140" y2="46"
+        stroke="#ff8fab" stroke-width="5" stroke-linecap="round" style="pointer-events:none"/>
+      ${draggable ? `<circle id="minuteHandle" class="handle" cx="140" cy="46" r="20" fill="#ff8fab" stroke="#fff" stroke-width="3" style="touch-action:none;"/>
+      <text x="140" y="52" font-size="14" font-weight="bold" fill="#fff" text-anchor="middle" style="pointer-events:none">ふん</text>` : ''}
+    </g>
     <circle cx="140" cy="140" r="8" fill="#3a3a4a"/>
-  </svg>`;
+  </svg>
+  ${draggable ? `<div class="handLegend">
+      <div class="legendItem"><span class="dot dot-hour"></span>くろい まる = じかんの はり</div>
+      <div class="legendItem"><span class="dot dot-minute"></span>ピンクの まる = ふんの はり</div>
+      <div class="legendItem">👆 まるを つまんで うごかしてね</div>
+    </div>` : ''}`;
 }
 
 function renderReadMode(){
@@ -276,33 +294,27 @@ function renderSetMode(){
 
 function setupDrag(){
   const svg = document.getElementById('clock');
-  const hourHand = document.getElementById('hourHand');
-  const minuteHand = document.getElementById('minuteHand');
+  const hourHandle = document.getElementById('hourHandle');
+  const minuteHandle = document.getElementById('minuteHandle');
 
   function getAngleFromEvent(evt){
     const rect = svg.getBoundingClientRect();
     const cx = rect.left + rect.width/2;
     const cy = rect.top + rect.height/2;
-    const clientX = evt.touches ? evt.touches[0].clientX : evt.clientX;
-    const clientY = evt.touches ? evt.touches[0].clientY : evt.clientY;
-    const dx = clientX - cx;
-    const dy = clientY - cy;
+    const dx = evt.clientX - cx;
+    const dy = evt.clientY - cy;
     let deg = Math.atan2(dx, -dy) * 180/Math.PI;
     if(deg < 0) deg += 360;
     return deg;
   }
 
-  function onDown(target){
+  function onDown(target, el){
     return (evt) => {
       evt.preventDefault();
       dragTarget = target;
+      try{ el.setPointerCapture(evt.pointerId); }catch(e){}
     };
   }
-  hourHand.addEventListener('pointerdown', onDown('hour'));
-  minuteHand.addEventListener('pointerdown', onDown('minute'));
-  hourHand.addEventListener('touchstart', onDown('hour'), {passive:false});
-  minuteHand.addEventListener('touchstart', onDown('minute'), {passive:false});
-
   function onMove(evt){
     if(!dragTarget) return;
     evt.preventDefault();
@@ -316,22 +328,32 @@ function setupDrag(){
     }
     updateHandPositions();
   }
-  function onUp(){ dragTarget = null; }
+  function onUp(evt){
+    dragTarget = null;
+    try{
+      if(hourHandle && hourHandle.hasPointerCapture(evt.pointerId)) hourHandle.releasePointerCapture(evt.pointerId);
+      if(minuteHandle && minuteHandle.hasPointerCapture(evt.pointerId)) minuteHandle.releasePointerCapture(evt.pointerId);
+    }catch(e){}
+  }
 
-  window.addEventListener('pointermove', onMove);
-  window.addEventListener('pointerup', onUp);
-  window.addEventListener('touchmove', onMove, {passive:false});
-  window.addEventListener('touchend', onUp);
+  hourHandle.addEventListener('pointerdown', onDown('hour', hourHandle));
+  minuteHandle.addEventListener('pointerdown', onDown('minute', minuteHandle));
+  hourHandle.addEventListener('pointermove', onMove);
+  minuteHandle.addEventListener('pointermove', onMove);
+  hourHandle.addEventListener('pointerup', onUp);
+  minuteHandle.addEventListener('pointerup', onUp);
+  hourHandle.addEventListener('pointercancel', onUp);
+  minuteHandle.addEventListener('pointercancel', onUp);
 }
 
 function updateHandPositions(){
-  const hourHand = document.getElementById('hourHand');
-  const minuteHand = document.getElementById('minuteHand');
-  if(!hourHand || !minuteHand) return;
+  const hourGroup = document.getElementById('hourGroup');
+  const minuteGroup = document.getElementById('minuteGroup');
+  if(!hourGroup || !minuteGroup) return;
   const hAngle = angleForHour(userHour, userMinute);
   const mAngle = angleForMinute(userMinute);
-  hourHand.setAttribute('transform', `rotate(${hAngle} 140 140)`);
-  minuteHand.setAttribute('transform', `rotate(${mAngle} 140 140)`);
+  hourGroup.setAttribute('transform', `rotate(${hAngle} 140 140)`);
+  minuteGroup.setAttribute('transform', `rotate(${mAngle} 140 140)`);
 }
 
 function handleResult(ok, answerText){
